@@ -1,0 +1,111 @@
+buildscript {
+  repositories {
+    maven { url 'http://repo.spring.io/plugins-release' }
+  }
+  dependencies {
+    classpath 'org.springframework.build.gradle:propdeps-plugin:0.0.7'
+  }
+}
+
+apply plugin: 'groovy'
+apply plugin: 'maven'
+apply plugin: 'jacoco'
+apply plugin: 'propdeps'
+
+repositories {
+  mavenCentral()
+  maven { url "https://plugins.gradle.org/m2/" }
+  maven { url 'http://repo.spring.io/plugins-release' }
+  jcenter()
+}
+
+configurations {
+  acceptanceTestJars
+}
+
+compileGroovy {
+  groovyOptions.javaAnnotationProcessing = true
+}
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+project.ext {
+  groovyVersion = "2.4.5"
+  awsLambdaJavaCoreVersion = "1.1.0"
+  awsLambdaJavaEventsVersion = "1.1.0"
+  awsLambdaJavaLog4jVersion = "1.0.0"
+  awsSdkVersion = "1.10.52"
+  daggerVersion = "1.2.2"
+  awsLambdaTestingUtilsVersion = "4"
+  acceptanceTestDir = "\${projectDir}/acceptance-tests"
+  acceptanceTestOutputDirs = ["\${acceptanceTestDir}/cucumber/build", "\${acceptanceTestDir}/cucumber/.gems"]
+}
+
+dependencies {
+  compile "org.codehaus.groovy:groovy-all:\${groovyVersion}"
+  compile "com.amazonaws:aws-lambda-java-core:\${awsLambdaJavaCoreVersion}"
+  compile "com.amazonaws:aws-lambda-java-events:\${awsLambdaJavaEventsVersion}"
+  compile "com.amazonaws:aws-lambda-java-log4j:\${awsLambdaJavaLog4jVersion}"
+  compile "com.amazonaws:aws-java-sdk-sns:\${awsSdkVersion}"
+  compile "com.amazonaws:aws-java-sdk-s3:\${awsSdkVersion}"
+  compile "com.squareup.dagger:dagger:\${daggerVersion}"
+
+  optional "com.squareup.dagger:dagger-compiler:\${daggerVersion}"
+
+  compile fileTree(dir: 'jars', include: '*.jar')
+
+  testCompile "org.hamcrest:hamcrest-all:1.3"
+  testCompile "junit:junit:4.12"
+  testCompile "org.mockito:mockito-core:1.10.8"
+}
+
+jacocoTestReport {
+  doFirst {
+    classDirectories = fileTree(dir: "\${buildDir}/classes/main/")
+  }
+  reports {
+    xml.enabled true
+  }
+}
+
+task acceptanceTest(type: Exec, dependsOn: 'assemble') { thisTask ->
+  group = "verification"
+  description = "Runs the acceptance tests"
+
+  inputs.dir "\${projectDir}/src"
+  inputs.dir "\${acceptanceTestDir}"
+  outputs.dir acceptanceTestOutputDirs
+
+  commandLine "\${acceptanceTestDir}/cucumber/test"
+
+  check.dependsOn(thisTask)
+  thisTask.mustRunAfter(test)
+}
+
+task cleanAcceptanceTest(type: Delete) { thisTask ->
+  group = "verification"
+  description = "Deletes the acceptance test results"
+
+  delete(acceptanceTestOutputDirs)
+  clean.dependsOn(thisTask)
+}
+
+task wrapper(type: Wrapper) {
+  gradleVersion = "2.5"
+}
+
+/**
+ * Builds Zip file for uploading to AWS Lambda
+ */
+task buildZip(type: Zip) {
+  from compileJava
+  from processResources
+  into('lib') {
+    from configurations.runtime
+  }
+}
+
+// Configure stacks task dependencies.
+processResources.dependsOn("stacks:genStacks")
+clean.dependsOn("stacks:cleanStacks")
